@@ -44,6 +44,8 @@ public class KmgMobileContext : DbContext
 
 var builder = WebApplication.CreateBuilder(args);
 
+
+
 // Добавляем DbContext
 builder.Services.AddDbContext<KmgMobileContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("KmgMobile")));
@@ -65,6 +67,9 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.MapControllers();
 app.Run();
+
+
+
 
 
 [ApiController]
