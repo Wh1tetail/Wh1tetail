@@ -504,3 +504,206 @@ namespace WSApi.Controllers
 //    - Линейная диаграмма: Месяц(CreatedAt) vs Count(Id)
 //    - Круговая диаграмма: Status vs Count(Id)
 // 4. KPI: всего заявок, завершённых, активных отделов и среднее в месяц.
+// Модель актива
+public class Asset
+{
+    public int AssetId { get; set; }
+    public string Name { get; set; } = null!;
+    public string AssetTag { get; set; } = null!;
+    public int AssetTypeId { get; set; }
+    public string? Location { get; set; }
+    public string? Status { get; set; }
+
+    public AssetType AssetType { get; set; } = null!;
+}
+
+public class AssetType
+{
+    public int AssetTypeId { get; set; }
+    public string Name { get; set; } = null!;
+    public ICollection<Asset> Assets { get; set; } = new List<Asset>();
+}
+
+public class ServiceRequest
+{
+    public int RequestId { get; set; }
+    public int AssetId { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public string Status { get; set; } = null!;
+    public string? Description { get; set; }
+    public string? AssignedTo { get; set; }
+
+    public Asset Asset { get; set; } = null!;
+}
+
+// DbContext
+public class KmgMobileContext : DbContext
+{
+    public KmgMobileContext(DbContextOptions<KmgMobileContext> options)
+        : base(options) { }
+
+    public DbSet<Asset> Assets => Set<Asset>();
+    public DbSet<AssetType> AssetTypes => Set<AssetType>();
+    public DbSet<ServiceRequest> ServiceRequests => Set<ServiceRequest>();
+}
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Добавляем DbContext
+builder.Services.AddDbContext<KmgMobileContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("KmgMobile")));
+
+// Добавляем контроллеры
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+
+// Swagger для тестирования
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseHttpsRedirection();
+app.MapControllers();
+app.Run();
+
+
+[ApiController]
+[Route("api/[controller]")]
+public class AssetsController : ControllerBase
+{
+    private readonly KmgMobileContext _context;
+
+    public AssetsController(KmgMobileContext context)
+    {
+        _context = context;
+    }
+
+    // GET api/assets
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<Asset>>> GetAssets()
+    {
+        return await _context.Assets
+            .Include(a => a.AssetType)
+            .ToListAsync();
+    }
+
+    // GET api/assets/5
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<Asset>> GetAsset(int id)
+    {
+        var asset = await _context.Assets
+            .Include(a => a.AssetType)
+            .FirstOrDefaultAsync(a => a.AssetId == id);
+
+        if (asset == null)
+            return NotFound();
+
+        return asset;
+    }
+
+    // POST api/assets
+    [HttpPost]
+    public async Task<ActionResult<Asset>> CreateAsset(Asset asset)
+    {
+        _context.Assets.Add(asset);
+        await _context.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetAsset), new { id = asset.AssetId }, asset);
+    }
+}
+
+
+
+mb
+
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             x:Class="KMG.Mobile.Module1.AssetsPage"
+             Title="Активы">
+    <RefreshView Command="{Binding LoadCommand}">
+        <CollectionView ItemsSource="{Binding Assets}">
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <StackLayout Padding="10">
+                        <Label Text="{Binding Name}" FontAttributes="Bold" />
+                        <Label Text="{Binding AssetTag}" FontSize="12" />
+                        <Label Text="{Binding Status}" FontSize="12" />
+                    </StackLayout>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </RefreshView>
+</ContentPage>
+
+
+
+public class AssetDto
+{
+    public int AssetId { get; set; }
+    public string Name { get; set; } = "";
+    public string AssetTag { get; set; } = "";
+    public string? Status { get; set; }
+}
+
+public class AssetApiService
+{
+    private readonly HttpClient _httpClient;
+
+    public AssetApiService()
+    {
+        _httpClient = new HttpClient
+        {
+            BaseAddress = new Uri("https://localhost:5001/") // свой URL API
+        };
+    }
+
+    public async Task<List<AssetDto>> GetAssetsAsync()
+    {
+        var response = await _httpClient.GetAsync("api/assets");
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync();
+
+        return JsonSerializer.Deserialize<List<AssetDto>>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+    }
+}
+
+
+public class AssetsViewModel : INotifyPropertyChanged
+{
+    private readonly AssetApiService _service = new();
+
+    public ObservableCollection<AssetDto> Assets { get; } = new();
+
+    public ICommand LoadCommand { get; }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public AssetsViewModel()
+    {
+        LoadCommand = new Command(async () => await LoadAsync());
+    }
+
+    private async Task LoadAsync()
+    {
+        var list = await _service.GetAssetsAsync();
+        Assets.Clear();
+        foreach (var a in list)
+            Assets.Add(a);
+    }
+}
+
+
+public partial class AssetsPage : ContentPage
+{
+    public AssetsPage()
+    {
+        InitializeComponent();
+        BindingContext = new AssetsViewModel();
+    }
+}
